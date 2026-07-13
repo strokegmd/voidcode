@@ -1,4 +1,7 @@
 {
     "deepseek_user_token": "configure it",
-    "qwen_token_cookie": "configure it"
+    "qwen_token_cookie": "configure it",
+    "chatgpt_authorization_token": "configure it",
+    "model": "qwen3.7-max",
+    "thinking_enabled": true
 }
