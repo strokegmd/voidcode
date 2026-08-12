@@ -55,7 +55,7 @@ def create_chat_session(model: str) -> DeepSeekChatSession | ChatGPTChatSession 
     elif model.lower() == 'chatgpt':
         session = ChatGPTChatSession()
 
-    elif model.lower() in ['qwen3.7-plus', 'qwen3.7-max', 'qwen3.6-plus']:
+    elif model.lower() in ['qwen3.7-plus', 'qwen3.7-max', 'qwen3.6-plus', 'qwen3.8-max']:
         session = QwenChatSession.create()
 
     else:
