@@ -1,5 +1,5 @@
 # Voidcode
-An attempt to reverse web versions of LLMs and create AI-powered coding assistant.
+An attempt to reverse web UIs of most popular LLMs and create AI-powered coding agent.
 
 # LLMs supported
 - DeepSeek (web version) with DeepThink 
