@@ -15,7 +15,7 @@ import numpy as np
 from typing import Dict, Any
 import os
 
-WASM_PATH = f'{os.path.dirname(__file__)}\\sha3_wasm_bg.7b9ca65ddd.wasm'
+WASM_PATH = f'{os.path.dirname(__file__)}/sha3_wasm_bg.7b9ca65ddd.wasm'
 
 class DeepSeekHash:
     def __init__(self: 'DeepSeekHash') -> None:
