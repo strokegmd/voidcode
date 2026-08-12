@@ -10,3 +10,6 @@ Currently it's an absolutely not usable in production tool. I don't really see a
 
 # Using
 If you decided to use this piece of shit, then just install everything from requirements.txt and configure tokens in config.json.
+
+# Note
+Accounts probably can be banned if you use this tool (however I didn't receive any ban while developing it) idk
