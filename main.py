@@ -1,4 +1,4 @@
-import json_repair
+import subprocess
 import config
 import time
 import os
@@ -8,6 +8,11 @@ from providers.chatgpt.api import ChatGPTChatSession
 from providers.qwen.api import QwenChatSession
 
 WORKSPACE = os.getcwd()
+TOOL_USE_START_TAG = '<VOIDCODE_TOOL_USE>'
+TOOL_USE_END_TAG = '</VOIDCODE_TOOL_USE>'
+
+def format_tool_result(tool_name: str, result: str) -> str:
+    return f'<VOIDCODE_TOOL_RESULT>\n{tool_name}\n{result}\n</VOIDCODE_TOOL_RESULT>\n\n'
 
 def write_file(filename: str, content: str) -> None:
     with open(f'{WORKSPACE}\\{filename}', 'w', encoding='utf-8') as file:
@@ -20,7 +25,7 @@ def read_file(filename: str) -> str:
 def list_files() -> str:
     listed_files = []
 
-    for root, dirs, files in os.walk(os.getcwd()):
+    for root, dirs, files in os.walk(WORKSPACE):
         for file in files:
             listed_files.append(os.path.join(root, file))
 
@@ -29,67 +34,30 @@ def list_files() -> str:
 def create_directory(name: str) -> None:
     os.mkdir(f'{WORKSPACE}\\{name}')
 
-def handle_response(session: DeepSeekChatSession | ChatGPTChatSession | QwenChatSession, response: str) -> None:
-    print()
-
-    try:
-        for line in response.splitlines():
-            if line.startswith('VOIDCODE_TOOL_USE'):
-                data = json_repair.loads(line.split('VOIDCODE_TOOL_USE|')[1])
-                if data['type'] == 'create_file':
-                    write_file(data['filename'], '')
-                    print(f'  [*] [tool use] created file with name {data["filename"]}')
-                elif data['type'] == 'write_file':
-                    write_file(data['filename'], data['content'])
-                    print(f'  [*] [tool use] wrote {len(data["content"])} characters to file with name {data["filename"]}')
-                elif data['type'] == 'read_file':
-                    content = read_file(data['filename'])
-                    if len(content) < 64000:
-                        handle_response(session, chat_completion(session, f'Contents of {data["filename"]}:\n\n{content}'))
-                    else:
-                        handle_response(session, chat_completion(session, f'{data["filename"]} is too big!'))
-                        
-                    print(f'  [*] [tool use] read file {data["filename"]} ({len(content)} characters)')
-                elif data['type'] == 'list_files':
-                    files = list_files()
-                    print(f'  [*] [tool use] listed {len(files)} files')
-                    handle_response(session, chat_completion(session, f'Listing files in {os.getcwd()}:\n\n{files}'))
-                elif data['type'] == 'create_directory':
-                    create_directory(data['name'])
-                    print(f'  [*] [tool use] created directory with name {data["name"]}')
-                elif data['type'] == 'jobs_finished':
-                    # TODO: idk if im even doing this tool stuff correctly, but i hope yes :^)
-                    return
-
-                continue
-
-            print(f'  {line}')
-
-        handle_response(session, chat_completion(session, '[Voidcode] Done.'))
-        print()
-    except Exception as e:
-        print(f'  [!] catched an exception while working: {e}\n')
-        handle_response(session, chat_completion(session, f'[Voidcode] Catched an exception while working: {e}. Please retry your previous query.'))
+def execute_command(command: str) -> str:
+    result = subprocess.run(command.split(), shell=True, capture_output=True)
+    return result.stdout.decode()
 
 def handle_command(prompt: str) -> None:
     global WORKSPACE
 
     args = prompt.split()
     if args[0] == '/workspace':
-        new_workspace = ' '.join(args).replace('/workspace ', '')
-        WORKSPACE = new_workspace
-
-        print(f'\n  [*] updated workspace to {new_workspace}\n')
+        WORKSPACE = ' '.join(args).replace('/workspace ', '')
+        print(f'\n  [*] updated workspace to {WORKSPACE}\n')
     else:
         print(f'\n  [!] unknown command\n')
 
 def create_chat_session(model: str) -> DeepSeekChatSession | ChatGPTChatSession | QwenChatSession | None:
     if model.lower() == 'deepseek':
         session = DeepSeekChatSession.create()
+
     elif model.lower() == 'chatgpt':
         session = ChatGPTChatSession()
+
     elif model.lower() in ['qwen3.7-plus', 'qwen3.7-max', 'qwen3.6-plus']:
         session = QwenChatSession.create()
+
     else:
         return None
     
@@ -98,20 +66,119 @@ def create_chat_session(model: str) -> DeepSeekChatSession | ChatGPTChatSession 
 
 def chat_completion(session: DeepSeekChatSession | ChatGPTChatSession | QwenChatSession, prompt: str) -> str:
     if isinstance(session, DeepSeekChatSession):
-        return session.chat_completion(prompt, config.get_key('thinking_enabled'))
+        return session.chat_completion(prompt, config.get_key('thinking_enabled'), config.get_key('search_enabled'))
+
     elif isinstance(session, ChatGPTChatSession):
         return session.chat_completion(prompt)
+
     elif isinstance(session, QwenChatSession):
-        return session.chat_completion(prompt, config.get_key('model'), config.get_key('thinking_enabled'))
+        return session.chat_completion(prompt, config.get_key('model'), config.get_key('thinking_enabled'), config.get_key('search_enabled'))
+
+def parse_tools(response: str) -> list[dict]:
+    in_tool = False
+    tool_lines = []
+    parsed = []
+
+    for line in response.splitlines():
+        if line.strip() == TOOL_USE_START_TAG:
+            in_tool = True
+            tool_lines = []
+            continue
+
+        elif line.strip() == TOOL_USE_END_TAG:
+            in_tool = False
+
+            if tool_lines:
+                tool_name = tool_lines[0].strip()
+                args = tool_lines[1:]
+
+                if tool_name == 'create_file':
+                    parsed.append({'type': 'create_file', 'filename': args[0]})
+
+                elif tool_name == 'write_file':
+                    parsed.append({'type': 'write_file', 'filename': args[0], 'content': '\n'.join(args[1:])})
+
+                elif tool_name == 'read_file':
+                    parsed.append({'type': 'read_file', 'filename': args[0]})
+
+                elif tool_name == 'list_files':
+                    parsed.append({'type': 'list_files'})
+
+                elif tool_name == 'create_directory':
+                    parsed.append({'type': 'create_directory', 'directory_name': args[0]})
+
+                elif tool_name == 'shell':
+                    parsed.append({'type': 'shell', 'command': args[0]})
+
+                elif tool_name == 'choice':
+                    parsed.append({'type': 'choice', 'question': args[0], 'choices': '\n'.join(args[1:])})
+
+            continue
+
+        if in_tool:
+            tool_lines.append(line)
+
+        else:
+            parsed.append({'type': 'ai_response', 'text': line})
+    
+    return parsed
+
+def handle_response(session: DeepSeekChatSession | ChatGPTChatSession | QwenChatSession, response: str) -> None:
+    if not response:
+        return handle_response(session, chat_completion(session, format_tool_result('retry', 'Your response is empty. Probably, you included your response into your thinking block by accident.')))
+
+    tools = parse_tools(response)
+    tool_results = ''
+    print()
+
+    for tool in tools:
+        try:
+            if tool['type'] == 'ai_response':
+                print('  ' + tool['text'])
+
+            elif tool['type'] == 'create_file':
+                write_file(tool['filename'], '')
+                tool_results += format_tool_result('create_file', f'File {tool["filename"]} has been created.')
+                print(f'  [*] [tool use] created file {tool["filename"]}')
+
+            elif tool['type'] == 'write_file':
+                write_file(tool['filename'], tool['content'])
+                tool_results += format_tool_result('write_file', f'Wrote {len(tool["content"])} characters to {tool["filename"]}')
+                print(f'  [*] [tool use] wrote {len(tool["content"])} characters to {tool["filename"]}')
+
+            elif tool['type'] == 'read_file':
+                content = read_file(tool['filename'])
+                tool_results += format_tool_result('read_file', content)
+                print(f'  [*] [tool use] read file {tool["filename"]} ({len(content)} characters)')
+
+            elif tool['type'] == 'list_files':
+                files = list_files()
+                tool_results += format_tool_result('list_files', files)
+                print(f'  [*] [tool use] listed {len(files)} files')
+
+            elif tool['type'] == 'create_directory':
+                create_directory(tool['directory_name'])
+                tool_results += format_tool_result('create_directory', f'Directory {tool["directory_name"]} has been created.')
+                print(f'  [*] [tool use] created directory with name {tool["directory_name"]}')
+
+            elif tool['type'] == 'shell':
+                tool_results += format_tool_result('shell', execute_command(tool['command']))
+                print(f'  [*] [tool use] executed command {tool["command"]}')
+
+            elif tool['type'] == 'choice':
+                tool_results += format_tool_result('choice', input(f'{tool["question"]}\n\n{tool["choices"]}\n\n> '))
+
+        except Exception as e:
+            print(f'  [!] catched an exception: {e}.')
+            handle_response(session, chat_completion(session, f'Catched an exception: {e}. Please retry your previous query.')) # TODO: maybe a bug here
+            continue
+
+    print()
+    if tool_results:
+        return handle_response(session, chat_completion(session, tool_results))
 
 def main() -> None:
-    print(f'\n    Voidcode\n    v1.0.00 test 3\n\n    Model: {config.get_key('model')}\n    Workspace: {WORKSPACE}\n')
-
-    # if not config.get_key('deepseek_user_token'):
-    #     print('    [!] Set DeepSeek User Token in config.json!')
-    #     return
-
-    print('    [*] Initializing chat session...')
+    print(f'\n    Voidcode\n    v1.0.00 test 4\n\n    Model: {config.get_key('model')}\n    Workspace: {WORKSPACE}\n')
 
     session = create_chat_session(config.get_key('model'))
     if not session:
@@ -120,7 +187,7 @@ def main() -> None:
     print('    [*] Ready for your prompts!\n')
 
     while True:
-        prompt = input('  > ')
+        prompt = input('>   ')
         if prompt.startswith('/'):
             handle_command(prompt)
             continue

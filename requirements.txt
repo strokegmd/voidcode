@@ -1,3 +1,2 @@
-json_repair
 requests
 wasmtime

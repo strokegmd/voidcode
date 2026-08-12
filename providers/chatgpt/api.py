@@ -37,6 +37,8 @@ class ChatGPTChatSession:
                 continue
 
             data = json.loads(line.split('data: ')[1])
+            print(data)
+            
             if data.get('message', {}).get('status') == 'finished_successfully' and data['message']['author']['role'] == 'assistant':
                 self.parent_message_id = data['message']['id']
                 self.conversation_id = data['conversation_id']

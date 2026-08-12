@@ -27,7 +27,7 @@ class QwenChatSession:
 
         return QwenChatSession(response.json()['data']['id'])
 
-    def chat_completion(self: 'QwenChatSession', prompt: str, model: str = 'qwen3.7-max', thinking_enabled: bool = False) -> str:
+    def chat_completion(self: 'QwenChatSession', prompt: str, model: str = 'qwen3.7-max', thinking_enabled: bool = False, search_enabled: bool = False) -> str:
         response = requests.post(
             url=f'https://chat.qwen.ai/api/v2/chat/completions?chat_id={self.chat_id}',
             headers=self.get_headers(),
@@ -57,10 +57,10 @@ class QwenChatSession:
                             'thinking_enabled': thinking_enabled,
                             'output_schema': 'phase',
                             'research_mode': 'normal',
-                            'auto_thinking': True,
+                            'auto_thinking': thinking_enabled,
                             'thinking_mode': 'Auto',
                             'thinking_format': 'summary',
-                            'auto_search': True,
+                            'auto_search': search_enabled,
                         },
                         'extra': {'meta': {'subChatType': 't2t'}},
                         'sub_chat_type': 't2t',
